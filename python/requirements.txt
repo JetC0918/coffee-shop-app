@@ -1,0 +1,7 @@
+pandas
+python-dotenv
+openai
+mlxtend
+firebase-admin
+google-cloud-storage
+pinecone
