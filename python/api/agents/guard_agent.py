@@ -36,8 +36,8 @@ class GuardAgent():
             make sure to follow the format exactly.
             
             {
-                "chain of thought" : "go over each of the points abobve and see if the messages lies under this point or nont. Then you write some thought about what point in this input relevant to."
-                "decision" : "allowed" or "not alloweed". Pick one of those, and only write the words
+                "chain of thought" : "go over each of the points above and see if the messages lies under this point or not. Then you write some thought about what point in this input relevant to.",
+                "decision" : "allowed" or "not allowed". Pick one of those, and only write the words,
                 "messages" : leave the messages empty if it is allowed otherwise write "Sorry, I cant help with that, can I help you with your order?"
             }
             
@@ -49,6 +49,7 @@ class GuardAgent():
         chatbot_output = get_llm_response(self.client, self.model_name, input_messages) 
  
         output = self.postprocess(chatbot_output)
+         
         
         return output
     
@@ -60,7 +61,7 @@ class GuardAgent():
             "content" : output['messages'],
             "memory" : {
                 "agent":"guard_agent",
-                "guard_decisionn": output['decision']
+                "guard_decision": output['decision']
             }
         }
         
