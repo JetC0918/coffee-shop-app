@@ -5,6 +5,7 @@ import json
 from copy import deepcopy
 from .utils import get_llm_response, double_check_json_output
 from dotenv import load_dotenv
+from typing import List, Dict, Any
 load_dotenv() 
 
 
@@ -26,24 +27,20 @@ class RecommendationAgent():
         self.product_categories = list(set(self.popular_recommendations['product_category'].tolist()))
         
     def get_popular_recommendation(self, product_categories=None, top_k=5):
-        recommendations_df = self.popular_recommendations
-        
-        print("RECOMMENDATION: ", recommendations_df.head(5))
-        
+        recommendations_df = self.popular_recommendations.copy()
+         
         if type(product_categories) == str:
             product_categories = [product_categories]
 
         if product_categories is not None:
             recommendations_df = self.popular_recommendations[self.popular_recommendations['product_category'].isin(product_categories)]
-        recommendations_df = recommendations_df.sort_values(by='number_of_transactions',ascending=False)
-        
-        print("RECOMMENDATION SORTED: ", recommendations_df.head(5))
-        
+        recommendations_df = recommendations_df.sort_values(by='number_of_transactions',ascending=False) 
         
         if recommendations_df.shape[0] == 0:
             return []
 
-        recommendations = recommendations_df['product'].tolist()[:top_k]
+        recommendations = recommendations_df['product'].tolist()[:top_k]  
+        
         return recommendations
     
     def get_apriori_recommendations(self, products, top_k = 5):
@@ -85,7 +82,7 @@ class RecommendationAgent():
         system_prompt = """ You are a helpful AI assistant for a coffee shop application which serves drinks and pastries. We have 3 types of recommendations:
 
         1. Apriori Recommendations: These are recommendations based on the user's order history. We recommend items that are frequently bought together with the items in the user's order.
-        2. Popular Recommendations: These are recommendations based on the popularity of items in the coffee shop. We recommend items that are popular among customers.
+        2. Popular Recommendations: These are recommendations based on the popularity of items in the coffee shop. We recommend items that are popular among customers.  
         3. Popular Recommendations by Category: Here the user asks to recommend them product in a category. Like what coffee do you recommend me to get?. We recommend items that are popular in the category of the user's requested category.
         
         Here is the list of items in the coffee shop:
@@ -106,22 +103,40 @@ class RecommendationAgent():
         input_messages = [{"role": "system", "content": system_prompt}] + messages[-3:]
         
         chatbot_response = get_llm_response(self.client, self.model_name, input_messages) 
-        chatbot_response = double_check_json_output(self.client, self.model_name, chatbot_response) 
-        print("CHATBOT JSON:" ,chatbot_response) 
+        chatbot_response = double_check_json_output(self.client, self.model_name, chatbot_response)  
         
         output= self.postprocess_classification(chatbot_response)
         
         return output
     
-    def postprocess_classification(self,output): 
-        output = json.loads(output)
-        
-        dict_output = {
-            'recommendation_type': output['recommendation_type'],
-            'parameters' : output ['parameters']
-         }
-        
-        return dict_output
+
+    def postprocess_classification(self, output: str) -> Dict[str, Any]:
+        # FIX: This method is now more robust. It finds the JSON within the string
+        # and handles parsing errors to prevent crashes.
+        try:
+            # Find the start and end of the JSON object
+            start_index = output.find('{')
+            end_index = output.rfind('}') + 1
+            
+            if start_index == -1 or end_index == 0:
+                print("Error: No JSON object found in the output.")
+                return {'recommendation_type': None, 'parameters': []}
+
+            json_str = output[start_index:end_index]
+            output_dict = json.loads(json_str)
+            
+            # To handle both "chain_of_thought" and "chain of thought" from the LLM
+            processed_dict = {
+                'recommendation_type': output_dict.get('recommendation_type'),
+                'parameters' : output_dict.get('parameters', [])
+            }
+            return processed_dict
+
+        except json.JSONDecodeError as e:
+            print(f"Error decoding JSON: {e}")
+            print(f"Problematic output string: {output}")
+            # Return a default dictionary to avoid crashing downstream
+            return {'recommendation_type': None, 'parameters': []}
     
     def get_recommendations_from_order(self,messages,order):
         memssages = deepcopy(messages)
@@ -171,26 +186,22 @@ class RecommendationAgent():
         if recommendations == []:
             return {'role':"assistant", "content":"sorry I can't help with that recommendation. Can I help you with something else"}
         
+        
         # Responsne to use
         recommendations_str = ", ".join(recommendations)
         
         system_prompt = f"""
-        You are a helpful AI assistant for a coffee shop application which serves drinks and pastries.
-        your task is to recommend items to the user based on their order.
+        You are a friendly and helpful AI assistant for a coffee shop called Sama Sama Coffee.
+        The user has just asked for a recommendation. Your task is to answer their last message.
+        Use the following list of items to form your recommendation response. Present them in a friendly, conversational way .
 
-        I will provide what items you should recommend to the user based on their order in the user message. 
-        """
-        
-        prompt = f"""
-        {messages[-1]['content']}
-        
-        Please recommend those item exactly: {recommendations_str}
-        
-        """
-        messages[-1]['content'] = prompt
+        Items to recommend: {recommendations_str}
+        """ 
         input_messages = [{"role": "system", "content": system_prompt}] + messages[-3:]
         
+        print("input_messages: ", input_messages)
         chatbot_response = get_llm_response(self.client, self.model_name, input_messages)
+        print("OUTPUT:", chatbot_response )
         output = self.postprocess(chatbot_response)
         
         return output
